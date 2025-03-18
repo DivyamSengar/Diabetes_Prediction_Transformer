@@ -17,7 +17,7 @@ class TabTransformer(nn.Module):
         
         # Transformer
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim, nhead=n_heads, dim_feedforward=hidden_dim*4, batch_first=True
+            d_model=hidden_dim, nhead=n_heads, dim_feedforward=hidden_dim*4
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
         
@@ -47,8 +47,7 @@ class TabTransformer(nn.Module):
         pooled = transformer_out.mean(dim=1)  # [batch, hidden]
         
         # Classification
-        # return torch.sigmoid(self.classifier(pooled)).squeeze()
-        return self.classifier(pooled).squeeze()
+        return torch.sigmoid(self.classifier(pooled)).squeeze()
 
 class BaselineDNN(nn.Module):
     def __init__(self, input_dim, hidden_dims=[64, 32], num_classes=1):

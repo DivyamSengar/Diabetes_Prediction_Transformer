@@ -4,10 +4,14 @@ from torch import nn, optim
 from sklearn.metrics import roc_auc_score, f1_score
 from dataloader import get_dataloaders
 from model import TabTransformer, BaselineDNN
+from util import plot_training_history
 
 def train(model, train_loader, val_loader, criterion, optimizer, epochs=10, device='cpu'):
     model = model.to(device)
     best_auc = 0
+    train_losses = []
+    val_losses = []
+    val_metrics_history = []
     
     for epoch in range(epochs):
         model.train()
@@ -31,17 +35,45 @@ def train(model, train_loader, val_loader, criterion, optimizer, epochs=10, devi
             optimizer.step()
             
             train_loss += loss.item()
+        
+        avg_train_loss = train_loss/len(train_loader)
+        train_losses.append(avg_train_loss)
             
         # Validation
+        model.eval()
+        val_loss = 0
+        with torch.no_grad():
+            for batch in val_loader:
+                categorical = batch['categorical'].to(device)
+                numerical = batch['numerical'].to(device)
+                targets = batch['target'].to(device)
+                
+                if isinstance(model, TabTransformer):
+                    outputs = model(categorical, numerical)
+                else:
+                    inputs = torch.cat([categorical.float(), numerical], dim=1)
+                    outputs = model(inputs)
+                    
+                loss = criterion(outputs, targets)
+                val_loss += loss.item()
+        
+        avg_val_loss = val_loss/len(val_loader)
+        val_losses.append(avg_val_loss)
+        
         val_metrics = evaluate(model, val_loader, device)
+        val_metrics_history.append(val_metrics)
+        
         print(f"Epoch {epoch+1}/{epochs}")
-        print(f"Train Loss: {train_loss/len(train_loader):.4f}")
+        print(f"Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
         print(f"Val AUC: {val_metrics['auc']:.4f} | Val F1: {val_metrics['f1']:.4f} | Val Acc: {val_metrics['acc']:.4f}")
         
         # Save best model
         if val_metrics['auc'] > best_auc:
             best_auc = val_metrics['auc']
             torch.save(model.state_dict(), 'best_model.pth')
+    
+    # Plot training history
+    plot_training_history(train_losses, val_losses, val_metrics_history)
             
     return model
 
