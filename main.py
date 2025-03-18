@@ -61,10 +61,9 @@ def evaluate(model, loader, device='cpu'):
             else:
                 inputs = torch.cat([categorical.float(), numerical], dim=1)
                 outputs = model(inputs)
-                
-            all_preds.append(outputs.cpu())
+            probabilities = torch.sigmoid(outputs)
+            all_preds.append(probabilities.cpu())
             all_targets.append(targets.cpu())
-    
     all_preds = torch.cat(all_preds)
     all_targets = torch.cat(all_targets)
     
@@ -78,17 +77,17 @@ def evaluate(model, loader, device='cpu'):
 
 if __name__ == "__main__":
     # Config
-    DATA_PATH = "diabetes.csv"
+    DATA_PATH = "diabetes_prediction_dataset.csv"
     BATCH_SIZE = 64
     EPOCHS = 20
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # Get data
-    train_loader, val_loader, encoders = get_dataloaders(DATA_PATH, BATCH_SIZE)
+    train_loader, val_loader, test_loader,  encoders = get_dataloaders(DATA_PATH, BATCH_SIZE)
     
     # Model setup
-    categorical_dims = [len(enc.categories_[0]) for enc in encoders.values()]
-    numerical_dim = 6  # From numerical columns
+    categorical_dims = [len(enc.classes_[0]) for enc in encoders.values()]
+    numerical_dim = 7  # From numerical columns
     
     # Choose model
     model = TabTransformer(
@@ -105,7 +104,7 @@ if __name__ == "__main__":
     
     # Handle class imbalance
     pos_weight = torch.tensor([5.0]).to(DEVICE)  # Adjust based on your dataset
-    criterion = nn.BCELoss(weight=pos_weight)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
     
     # Train

@@ -41,18 +41,33 @@ class DiabetesDataset(Dataset):
         # Preprocess data
         self._fit_preprocessors()
         self._preprocess_data()
+        # print(self.df.isna().sum())
+
 
     def _load_and_preprocess(self, data_path):
         df = pd.read_csv(data_path)
-        
+        # print(df.isna().sum())
         # Explicit gender encoding
-        df['gender'] = df['gender'].map({'Female': 0, 'Male': 1, 'female': 0, 'male': 1})
+        # print('unique print: ', df['gender'].unique())
+        df['gender'] = df['gender'].map({'Female': 0, 'Male': 1, 'female': 0, 'male': 1, 'Other': 0.5, 'other': 0.5})
         
         # Clean smoking history
         df['smoking_history'] = df['smoking_history'].replace({
             'No Info': 'unknown',
             'not current': 'former'  # Merge similar categories
         })
+        # # Check for unexpected gender values
+        # unique_genders = df['gender'].unique()
+        # expected_genders = [0, 1, None]  # Include None for potential NaNs after mapping
+        # unexpected_genders = [g for g in unique_genders if g not in expected_genders]
+        
+        # if unexpected_genders:
+        #     print(f"Unexpected gender values found: {unexpected_genders}")
+            
+        #     original_unique_genders = df['gender'].map({0:'female', 1:'male', None:None}).unique()
+        #     original_unexpected_genders = [g for g in original_unique_genders if g not in ['female','male']]
+        #     if original_unexpected_genders:
+        #         print(f"Original unexpected gender values found before mapping: {original_unexpected_genders}")
         return df
 
     def _apply_smote(self):
