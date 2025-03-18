@@ -47,7 +47,7 @@ class TabTransformer(nn.Module):
         pooled = transformer_out.mean(dim=1)  # [batch, hidden]
         
         # Classification
-        return torch.sigmoid(self.classifier(pooled)).squeeze()
+        return self.classifier(pooled).squeeze()
 
 class BaselineDNN(nn.Module):
     def __init__(self, input_dim, hidden_dims=[64, 32], num_classes=1):
@@ -68,4 +68,4 @@ class BaselineDNN(nn.Module):
         
     def forward(self, x):
         features = self.features(x)
-        return torch.sigmoid(self.classifier(features)).squeeze()
+        return self.classifier(features).squeeze()

@@ -45,18 +45,36 @@ class DiabetesDataset(Dataset):
     def _load_and_preprocess(self, data_path):
         df = pd.read_csv(data_path)
         
-        # Explicit gender encoding
-        df['gender'] = df['gender'].map({'Female': 0, 'Male': 1, 'female': 0, 'male': 1})
+        # Handle missing values in numerical columns
+        for col in ['age', 'bmi', 'HbA1c_level', 'blood_glucose_level']:
+            df[col] = df[col].fillna(df[col].mean())
         
-        # Clean smoking history
+        # Binary columns should be filled with mode
+        for col in ['gender', 'hypertension', 'heart_disease']:
+            df[col] = df[col].fillna(df[col].mode()[0])
+        
+        # Explicit gender encoding with default for unknown values
+        gender_map = {'Female': 0, 'Male': 1, 'female': 0, 'male': 1}
+        df['gender'] = df['gender'].map(lambda x: gender_map.get(str(x), 0.5))
+        
+        # Clean smoking history and handle missing values
+        df['smoking_history'] = df['smoking_history'].fillna('unknown')
         df['smoking_history'] = df['smoking_history'].replace({
             'No Info': 'unknown',
-            'not current': 'former'  # Merge similar categories
+            'not current': 'former',  # Merge similar categories
+            'nan': 'unknown',
+            'NaN': 'unknown'
         })
+        
+        # Verify no NaN values remain
+        assert not df.isna().any().any(), "NaN values found in dataset after preprocessing"
         return df
 
     def _apply_smote(self):
         """Apply SMOTE only to training data"""
+        # Verify no NaN values before SMOTE
+        assert not self.df.isna().any().any(), "NaN values found before applying SMOTE"
+        
         # Separate features and target
         X = self.df[self.categorical_cols + self.numerical_cols]
         y = self.df[self.target_col]
@@ -67,8 +85,14 @@ class DiabetesDataset(Dataset):
         
         self.df = pd.DataFrame(X_res, columns=X.columns)
         self.df[self.target_col] = y_res
+        
+        # Verify no NaN values after SMOTE
+        assert not self.df.isna().any().any(), "NaN values found after applying SMOTE"
 
     def _fit_preprocessors(self):
+        # Verify no NaN values before fitting preprocessors
+        assert not self.data.isna().any().any(), "NaN values found before fitting preprocessors"
+        
         # Fit label encoders and scalers on training data
         self.encoders = {
             'smoking_history': LabelEncoder().fit(self.data['smoking_history'])
@@ -78,6 +102,9 @@ class DiabetesDataset(Dataset):
                       for col in self.numerical_cols}
 
     def _preprocess_data(self):
+        # Verify no NaN values before transforming
+        assert not self.df.isna().any().any(), "NaN values found before preprocessing"
+        
         # Transform data
         self.df['smoking_history'] = self.encoders['smoking_history'].transform(
             self.df['smoking_history']
@@ -85,6 +112,9 @@ class DiabetesDataset(Dataset):
         
         for col in self.numerical_cols:
             self.df[col] = self.scalers[col].transform(self.df[[col]])
+        
+        # Final verification
+        assert not self.df.isna().any().any(), "NaN values found after preprocessing"
 
     def __len__(self):
         return len(self.df)
