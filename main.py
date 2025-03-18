@@ -87,6 +87,8 @@ if __name__ == "__main__":
     
     # Model setup
     categorical_dims = [len(enc.classes_[0]) for enc in encoders.values()]
+    # categorical_dims = 1
+    # print(categorical_dims)
     numerical_dim = 7  # From numerical columns
     
     # Choose model
@@ -99,8 +101,8 @@ if __name__ == "__main__":
     )
     
     # For baseline DNN:
-    # input_dim = sum(categorical_dims) + numerical_dim
-    # model = BaselineDNN(input_dim)
+    input_dim = 8
+    model = BaselineDNN(input_dim)
     
     # Handle class imbalance
     pos_weight = torch.tensor([5.0]).to(DEVICE)  # Adjust based on your dataset
