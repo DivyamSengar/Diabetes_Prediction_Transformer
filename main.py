@@ -149,9 +149,6 @@ if __name__ == "__main__":
         ], lr=1e-3, weight_decay=1e-4)
     else:
         raise ValueError(f"Unknown model type: {args.model_type}")
-    # After SMOTE/GAN augmentation
-    class_counts = train_dataset.df['diabetes'].value_counts()
-    pos_weight = torch.tensor([class_counts[0]/class_counts[1]]).to(DEVICE)
     # Handle class imbalance
     pos_weight = torch.tensor([5.0]).to(DEVICE)  # Adjust based on your dataset
     # criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
