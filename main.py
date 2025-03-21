@@ -3,7 +3,7 @@ import numpy as np
 from torch import nn, optim
 from sklearn.metrics import roc_auc_score, f1_score
 from dataloader import get_dataloaders
-from model import TabTransformer, BaselineDNN, EnsembleModel
+from model import TabTransformer, BaselineDNN, EnsembleModel, EnhancedTabTransformer
 import argparse
 
 def train(model, train_loader, val_loader, criterion, optimizer, epochs=10, device='cpu'):
@@ -79,7 +79,9 @@ def evaluate(model, loader, device='cpu'):
     all_preds = torch.cat(all_preds)
     all_targets = torch.cat(all_targets)
 
-    preds_class = (all_preds > 0.5).float()
+    # preds_class = (all_preds > 0.5).float()
+    best_thresh = find_optimal_threshold(model, val_loader, DEVICE)
+    preds_class = (all_preds > best_thresh).float()
 
     return {
         'acc': (preds_class == all_targets).float().mean().item(),
@@ -97,7 +99,53 @@ class FocalLoss(nn.Module):
         bce_loss = nn.BCEWithLogitsLoss()(inputs, targets)
         pt = torch.exp(-bce_loss)
         return self.alpha * (1-pt)**self.gamma * bce_loss
+def find_optimal_threshold(model, loader, device):
+    model.eval()
+    all_preds = []
+    all_targets = []
+    
+    with torch.no_grad():
+        for batch in loader:
+            categorical = batch['categorical'].to(device)
+            numerical = batch['numerical'].to(device)
+            targets = batch['target'].to(device)
+            
+            outputs = model(categorical, numerical)
+            all_preds.append(torch.sigmoid(outputs).cpu())
+            all_targets.append(targets.cpu())
+    
+    preds = torch.cat(all_preds).numpy()
+    targets = torch.cat(all_targets).numpy()
+    
+    thresholds = np.linspace(0.3, 0.7, 50)
+    f1s = [f1_score(targets, preds > t) for t in thresholds]
+    return thresholds[np.argmax(f1s)]
+# Add new functions
+def calculate_val_loss(model, loader, criterion, device):
+    model.eval()
+    total_loss = 0
+    with torch.no_grad():
+        for batch in loader:
+            categorical = batch['categorical'].to(device)
+            numerical = batch['numerical'].to(device)
+            targets = batch['target'].to(device)
+            
+            outputs = model(categorical, numerical)
+            loss = criterion(outputs, targets)
+            total_loss += loss.item()
+    return total_loss/len(loader)
 
+def plot_losses(train_losses, val_losses):
+    import matplotlib.pyplot as plt
+    plt.figure()
+    plt.plot(train_losses, label='Train Loss')
+    plt.plot(val_losses, label='Val Loss')
+    plt.title('Training/Validation Loss Curve')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig('training_curves.png')
+    plt.close()
 if __name__ == "__main__":
     # Argument parser
     parser = argparse.ArgumentParser(description="Train and evaluate different models.")
@@ -130,6 +178,16 @@ if __name__ == "__main__":
         input_dim = len(one_hot_columns) + numerical_dim
         model = BaselineDNN(input_dim)
         optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    elif args.model_type == 'enhanced':
+        categorical_dims = len(one_hot_columns)
+        model = EnhancedTabTransformer(
+        categorical_dims=len(one_hot_columns),
+        numerical_dim=numerical_dim,
+        hidden_dim=64,
+        n_heads=8,  # Matches your previous experiment
+        n_layers=6   # Matches your previous experiment
+    )
+        optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
     elif args.model_type == 'ensemble':
         categorical_dims_tab = len(one_hot_columns)
         model_tab = TabTransformer(
@@ -149,6 +207,9 @@ if __name__ == "__main__":
         ], lr=1e-3, weight_decay=1e-4)
     else:
         raise ValueError(f"Unknown model type: {args.model_type}")
+    # # Replace pos_weight calculation in main.py
+    # class_counts = train_loader.dataset.df['diabetes'].value_counts().to_list()
+    # pos_weight = torch.tensor([class_counts[0]/class_counts[1]]).to(DEVICE)  # Auto-calculate
     # Handle class imbalance
     pos_weight = torch.tensor([5.0]).to(DEVICE)  # Adjust based on your dataset
     # criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)

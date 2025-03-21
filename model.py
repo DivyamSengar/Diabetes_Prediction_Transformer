@@ -70,8 +70,7 @@ class BaselineDNN(nn.Module):
     def forward(self, x):
         features = self.features(x)
         return torch.sigmoid(self.classifier(features)).squeeze()
-    
-# Add this class to model.py
+
 class EnsembleModel(nn.Module):
     def __init__(self, model1, model2):
         super().__init__()
@@ -85,3 +84,30 @@ class EnsembleModel(nn.Module):
         out2 = self.model2(inputs)
         combined = torch.stack([out1, out2], dim=1)
         return self.meta(combined).squeeze()
+
+class EnhancedTabTransformer(TabTransformer):
+    def __init__(self, categorical_dims, numerical_dim, hidden_dim=64, 
+                 n_heads=4, n_layers=3, num_classes=1):
+        super().__init__(categorical_dims, numerical_dim, hidden_dim, 
+                        n_heads, n_layers, num_classes)
+        
+        # Add feature attention mechanism
+        self.feature_attention = nn.Sequential(
+            nn.Linear(hidden_dim, 1),
+            nn.Sigmoid()
+        )
+        
+    def forward(self, categorical, numerical):
+        # Existing forward logic
+        cat_embedded = self.categorical_proj(categorical).unsqueeze(1)
+        num_proj = self.numerical_proj(numerical).unsqueeze(1)
+        combined = torch.cat([cat_embedded, num_proj], dim=1)
+        
+        transformer_out = self.transformer(combined)
+        
+        # New attention weighting
+        attention_weights = self.feature_attention(transformer_out)
+        weighted_out = transformer_out * attention_weights
+        
+        pooled = weighted_out.mean(dim=1)
+        return self.classifier(pooled).squeeze()
