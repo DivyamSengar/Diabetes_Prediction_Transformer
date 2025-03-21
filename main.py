@@ -141,8 +141,11 @@ def calculate_val_loss(model, loader, criterion, device):
             categorical = batch['categorical'].to(device)
             numerical = batch['numerical'].to(device)
             targets = batch['target'].to(device)
-            
-            outputs = model(categorical, numerical)
+            if args.model_type == 'baseline': 
+                inputs = torch.cat([categorical.float(), numerical], dim=1)
+                outputs = model(inputs)
+            else: 
+                outputs = model(categorical, numerical)
             loss = criterion(outputs, targets)
             total_loss += loss.item()
     return total_loss/len(loader)
