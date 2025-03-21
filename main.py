@@ -5,11 +5,17 @@ from sklearn.metrics import roc_auc_score, f1_score
 from dataloader import get_dataloaders
 from model import TabTransformer, BaselineDNN, EnsembleModel, EnhancedTabTransformer
 import argparse
+import matplotlib.pyplot as plt
 
 def train(model, train_loader, val_loader, criterion, optimizer, epochs=10, device='cpu'):
     model = model.to(device)
     best_auc = 0
     best_acc = 0
+    train_losses = []
+    val_losses = []
+    val_f1s = []
+    val_aucs = []
+    val_accs = []
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
     for epoch in range(epochs):
         model.train()
@@ -39,9 +45,15 @@ def train(model, train_loader, val_loader, criterion, optimizer, epochs=10, devi
             optimizer.zero_grad()
             train_loss += loss.item()
         scheduler.step()
+        train_losses.append(train_loss/len(train_loader))
 
         # Validation
         val_metrics = evaluate(model, val_loader, device)
+        val_loss = calculate_val_loss(model, val_loader, criterion, device)  # New func
+        val_losses.append(val_loss)
+        val_f1s.append(val_metrics['f1'])
+        val_aucs.append(val_metrics['auc'])
+        val_accs.append(val_metrics['acc'])
         print(f"Epoch {epoch+1}/{epochs}")
         print(f"Train Loss: {train_loss/len(train_loader):.4f}")
         print(f"Val AUC: {val_metrics['auc']:.4f} | Val F1: {val_metrics['f1']:.4f} | Val Acc: {val_metrics['acc']:.4f}")
@@ -49,7 +61,7 @@ def train(model, train_loader, val_loader, criterion, optimizer, epochs=10, devi
         if val_metrics['acc'] > best_acc:
             best_acc = val_metrics['acc']
             torch.save(model.state_dict(), 'best_model.pth')
-
+    plot_training_curves(train_losses, val_losses, val_f1s, val_aucs, val_accs)
     return model
 
 def evaluate(model, loader, device='cpu'):
@@ -78,10 +90,11 @@ def evaluate(model, loader, device='cpu'):
             all_targets.append(targets.cpu())
     all_preds = torch.cat(all_preds)
     all_targets = torch.cat(all_targets)
-
-    # preds_class = (all_preds > 0.5).float()
-    best_thresh = find_optimal_threshold(model, val_loader, DEVICE)
-    preds_class = (all_preds > best_thresh).float()
+    if args.model_type == 'baseline':
+        preds_class = (all_preds > 0.5).float()
+    else: 
+        best_thresh = find_optimal_threshold(model, threshold_loader, DEVICE)
+        preds_class = (all_preds > best_thresh).float()
 
     return {
         'acc': (preds_class == all_targets).float().mean().item(),
@@ -109,7 +122,6 @@ def find_optimal_threshold(model, loader, device):
             categorical = batch['categorical'].to(device)
             numerical = batch['numerical'].to(device)
             targets = batch['target'].to(device)
-            
             outputs = model(categorical, numerical)
             all_preds.append(torch.sigmoid(outputs).cpu())
             all_targets.append(targets.cpu())
@@ -135,16 +147,30 @@ def calculate_val_loss(model, loader, criterion, device):
             total_loss += loss.item()
     return total_loss/len(loader)
 
-def plot_losses(train_losses, val_losses):
-    import matplotlib.pyplot as plt
-    plt.figure()
+def plot_training_curves(train_losses, val_losses, f1_scores, auc_scores, acc_scores):
+    plt.figure(figsize=(12, 5))
+    
+    # Loss plot
+    plt.subplot(1, 2, 1)
     plt.plot(train_losses, label='Train Loss')
     plt.plot(val_losses, label='Val Loss')
-    plt.title('Training/Validation Loss Curve')
+    plt.title('Training/Validation Loss')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig('training_curves.png')
+
+    # Metrics plot
+    plt.subplot(1, 2, 2)
+    plt.plot(f1_scores, label='F1 Score')
+    plt.plot(auc_scores, label='AUC')
+    plt.plot(acc_scores, label='Accuracy')
+    plt.title('Validation Metrics Progress')
+    plt.xlabel('Epochs')
+    plt.ylabel('Score')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.savefig('training_metrics.png')
     plt.close()
 if __name__ == "__main__":
     # Argument parser
@@ -156,10 +182,12 @@ if __name__ == "__main__":
     DATA_PATH = "diabetes_prediction_dataset.csv"
     BATCH_SIZE = 64
     EPOCHS = 20
-    DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+    DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 
     # Get data
     train_loader, val_loader, test_loader, one_hot_columns = get_dataloaders(DATA_PATH, BATCH_SIZE)
+    # Add this line:
+    _, threshold_loader, _, _ = get_dataloaders(DATA_PATH, BATCH_SIZE)  # Fresh split for threshold tuning
 
     # Model setups
     numerical_dim = 7  # From numerical columns
