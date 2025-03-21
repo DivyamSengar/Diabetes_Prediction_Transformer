@@ -7,7 +7,7 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 from imblearn.over_sampling import SMOTE
-
+from sklearn.preprocessing import RobustScaler
 class DiabetesDataset(Dataset):
     def __init__(self, data_path, split='train', test_size=0.15, val_size=0.15,
                  random_state=42, augment=False):
@@ -88,15 +88,26 @@ class DiabetesDataset(Dataset):
         self.encoders = {
             'smoking_history': LabelEncoder().fit(self.data['smoking_history'])
         }
-        
+        # for col in self.numerical_cols:
+        #     lower = self.data[col].quantile(0.01)
+        #     upper = self.data[col].quantile(0.99)
+        #     self.data[col] = self.data[col].clip(lower, upper)
         self.scalers = {col: StandardScaler().fit(self.data[[col]]) 
                       for col in self.numerical_cols}
+        # self.scalers = {col: RobustScaler().fit(self.data[[col]]) 
+        #               for col in self.numerical_cols}
 
     def _preprocess_data(self):
         # Transform data
-        self.df['smoking_history'] = self.encoders['smoking_history'].transform(
-            self.df['smoking_history']
-        )
+        # self.df['smoking_history'] = self.encoders['smoking_history'].transform(
+        #     self.df['smoking_history']
+        # )
+        # New one-hot encoding for smoking_history:
+        one_hot = pd.get_dummies(self.df['smoking_history'], prefix='smoking_history')
+        self.df = pd.concat([self.df, one_hot], axis=1)
+        self.one_hot_columns = list(one_hot.columns)
+        # Optionally drop the original column:
+        self.df.drop(columns=['smoking_history'], inplace=True)
         
         for col in self.numerical_cols:
             self.df[col] = self.scalers[col].transform(self.df[[col]])
@@ -106,11 +117,11 @@ class DiabetesDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-        categorical = torch.tensor([
-            # row['gender'],  # Already encoded as 0/1
-            row['smoking_history']
-        ], dtype=torch.long)
-        
+        # categorical = torch.tensor([
+        #     # row['gender'],  # Already encoded as 0/1
+        #     row['smoking_history']
+        # ], dtype=torch.long)
+        categorical = torch.tensor(row[self.one_hot_columns].values.astype(np.float32))
         numerical = torch.tensor(row[self.numerical_cols].values.astype(np.float32))
         target = torch.tensor(row[self.target_col], dtype=torch.float32)
         
@@ -139,4 +150,5 @@ def get_dataloaders(data_path, batch_size=32, augment=False):
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
     test_loader = DataLoader(test_dataset, batch_size=batch_size)
     
-    return train_loader, val_loader, test_loader, train_dataset.encoders
+    # return train_loader, val_loader, test_loader, train_dataset.encoders
+    return train_loader, val_loader, test_loader, train_dataset.one_hot_columns
